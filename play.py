@@ -1,9 +1,10 @@
 '''play.py: Play a game of tic-tac-toe against an AI opponent.'''
 import board
 import numpy as np
-from sklearn.neural_network import MLPRegressor
 import random
-import time
+import pickle
+import sys
+from sklearn.neural_network import MLPRegressor
 
 def experience_replay(replay_memory):
     """Trains model on experiences, e."""
@@ -34,56 +35,92 @@ def warn(*args, **kwargs):
 import warnings
 warnings.warn = warn
 
-replay_memory = []
-gamma = 0.99 # reward decay
-epsilon = 0.50 # exploration/exploitation ratio
-episodes = 5000
+if sys.argv[1] == 'train':
+    replay_memory = []
+    gamma = 0.99 # reward decay
+    epsilon = 0.20 # exploration/exploitation ratio
+    episodes = 10000
 
-# Init ML model
-model = MLPRegressor(hidden_layer_sizes=(100), max_iter=1000)
-xstate = np.zeros(9)
-ystate = np.zeros(9)
-model.fit([xstate], [ystate])
+    # Init ML model
+    model = MLPRegressor(hidden_layer_sizes=(100), max_iter=1000)
+    xstate = np.zeros(9)
+    ystate = np.zeros(9)
+    model.fit([xstate], [ystate])
 
-# Play n episodes
-for n in range(episodes):
-    print("Episode #{0}".format(n))
-    print("------------")
+    # Play n episodes
+    for n in range(episodes):
+        print("Episode #{0}".format(n))
+        print("------------")
+        b = board.Board()
+        total_reward = 0
+        while not b.is_done():
+            for player in ['x', 'o']:
+
+                # Limit experience replay memory length
+                #replay_memory = replay_memory[-7500:]
+
+                # Get current game state
+                state = b.get_board_vector(player)
+
+                # Select action with epsilon-greedy strategy
+                if random.uniform(0, 1) < epsilon:
+                    # Explore: make random valid move
+                    action = random.choice(b.valid_moves())
+                else:
+                    # Exploit: make best move.
+                    action = np.argmax(model.predict([state]))
+
+                b.place(action, player)
+                reward = b.reward(player)
+                total_reward += reward
+                new_state = b.get_board_vector(player)
+
+                # Store experience e(s, a, r, s') in replay memory.
+                replay_memory.append((state, action, reward, new_state, b.is_done()))
+
+                if b.is_done():
+                    break
+
+        # Update model every so often.
+        if not n % 25:
+            model = experience_replay(replay_memory)
+            with open('out', 'a') as f:
+                f.write("{0} {1}\n".format(n, total_reward))
+
+        if b.broken_rules:
+            print("Broken")
+        elif b.is_win('x') or b.is_win('o'):
+            print("Win")
+        else:
+            print("Tie")
+
+    with open('model', 'wb') as f:
+        pickle.dump(model, f)
+elif sys.argv[1] == 'play':
+    with open('model', 'rb') as f:
+        model = pickle.load(f)
     b = board.Board()
-    total_reward = 0
+    b.print_board()
     while not b.is_done():
         for player in ['x', 'o']:
-
-            # Limit experience replay memory length
-            #replay_memory = replay_memory[-7500:]
-
-            # Get current game state
-            state = b.get_board_vector(player)
-
-            # Select action with epsilon-greedy strategy
-            if random.uniform(0, 1) < epsilon:
-                # Explore: make random valid move
-                action = random.choice(b.valid_moves())
+            if player == 'x':
+                move = int(input("Move: "))
+                b.place(move, 'x')
             else:
+                # Get current game state
+                state = b.get_board_vector(player)
+
+                # Select action with epsilon-greedy strategy
                 # Exploit: make best move.
                 action = np.argmax(model.predict([state]))
 
-            b.place(action, player)
-            reward = b.reward(player)
-            total_reward += reward
-            new_state = b.get_board_vector(player)
-            
-            # Store experience e(s, a, r, s') in replay memory.
-            replay_memory.append((state, action, reward, new_state, b.is_done()))
-            
-            if b.is_done():
-                break 
+                b.place(action, player)
+                reward = b.reward(player)
+                new_state = b.get_board_vector(player)
 
-    # Update model every so often.
-    if not n % 50:
-        model = experience_replay(replay_memory)
-        with open('out', 'a') as f:
-            f.write("{0} {1}\n".format(n/50, total_reward))
+            b.print_board()
+            if b.is_done():
+                break
 
     if b.broken_rules:
         print("Broken")
@@ -91,4 +128,3 @@ for n in range(episodes):
         print("Win")
     else:
         print("Tie")
-    
