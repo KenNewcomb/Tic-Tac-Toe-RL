@@ -38,19 +38,17 @@ warnings.warn = warn
 if sys.argv[1] == 'train':
     replay_memory = []
     gamma = 0.99 # reward decay
-    epsilon = 0.20 # exploration/exploitation ratio
+    epsilon = 0.25 # exploration/exploitation ratio
     episodes = 10000
 
     # Init ML model
-    model = MLPRegressor(hidden_layer_sizes=(100), max_iter=1000)
+    model = MLPRegressor(hidden_layer_sizes=(50), max_iter=1000)
     xstate = np.zeros(9)
     ystate = np.zeros(9)
     model.fit([xstate], [ystate])
 
     # Play n episodes
     for n in range(episodes):
-        print("Episode #{0}".format(n))
-        print("------------")
         b = board.Board()
         total_reward = 0
         while not b.is_done():
@@ -72,11 +70,14 @@ if sys.argv[1] == 'train':
 
                 b.place(action, player)
                 reward = b.reward(player)
+                if b.is_win():
+                    replay_memory[-1][2] = -1
+                    replay_memory[-1][4] = True
                 total_reward += reward
                 new_state = b.get_board_vector(player)
 
                 # Store experience e(s, a, r, s') in replay memory.
-                replay_memory.append((state, action, reward, new_state, b.is_done()))
+                replay_memory.append([state, action, reward, new_state, b.is_done()])
 
                 if b.is_done():
                     break
@@ -85,14 +86,19 @@ if sys.argv[1] == 'train':
         if not n % 25:
             model = experience_replay(replay_memory)
             with open('out', 'a') as f:
-                f.write("{0} {1}\n".format(n, total_reward))
+                print("Episode #{0}".format(n))
+                print("------------")
+                if b.broken_rules:
+                    print("Broken Rules")
+                    f.write("{0} 0\n".format(n))
+                elif b.is_win():
+                    print("Win/Lose")
+                    f.write("{0} 1\n".format(n))
+                elif b.is_done():
+                    print("Tie")
+                    f.write("{0} 2\n".format(n))
+                print()
 
-        if b.broken_rules:
-            print("Broken")
-        elif b.is_win('x') or b.is_win('o'):
-            print("Win")
-        else:
-            print("Tie")
 
     with open('model', 'wb') as f:
         pickle.dump(model, f)
@@ -123,8 +129,8 @@ elif sys.argv[1] == 'play':
                 break
 
     if b.broken_rules:
-        print("Broken")
+        print("Broken Rules.")
     elif b.is_win('x') or b.is_win('o'):
-        print("Win")
+        print("Win/Lose")
     else:
         print("Tie")

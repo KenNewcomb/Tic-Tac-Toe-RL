@@ -25,7 +25,7 @@ class Board:
         if self.is_win(player):
             return 1
         elif self.broken_rules:
-            return -1
+            return -1.5
         elif self.is_done():
             return 0.5
         else:
