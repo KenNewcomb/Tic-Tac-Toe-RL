@@ -23,18 +23,19 @@ class Board:
 
     def reward(self, player):
         if self.is_win(player):
-            return 1
+            return 5.0
         elif self.broken_rules:
-            return -1.5
+            return -10.0
         elif self.is_done():
-            return 0.5
+            return 2.5
         else:
             return 0.1
 
     def is_win(self, t = ' '):
-        # Horizontal wins
         if t == ' ':
             return self.is_win('x') or self.is_win('o')
+
+        # Horizontal wins
         if self.board[0] == t and self.board[1] == t and self.board[2] == t:
             return True
         if self.board[3] == t and self.board[4] == t and self.board[5] == t:

@@ -16,7 +16,7 @@ def experience_replay(replay_memory):
     # Fit the model to replay memory.
     states  = []
     targets = []
-    for (state, action, reward, next_state, done) in replay_memory:
+    for (state, action, reward, next_state, done) in replay_memory[:5000]:
         if not done:
             target = reward + gamma*np.max(model.predict([next_state]))
         else:
@@ -26,23 +26,20 @@ def experience_replay(replay_memory):
         target_f[0][action] = target
         states.append(state)
         targets.append(target_f[0])
-    model.fit(states, targets)
+    model.partial_fit(states, targets)
     return model
 
-# Suppress scikit's convergence warnings.
-def warn(*args, **kwargs):
-    pass
-import warnings
-warnings.warn = warn
-
+t_avg = [0, 0, 0]
+scores  = []
 if sys.argv[1] == 'train':
     replay_memory = []
-    gamma = 0.99 # reward decay
-    epsilon = 0.25 # exploration/exploitation ratio
-    episodes = 10000
+    gamma = 0.99 # discount factor
+    epsilon = 0.05 # exploration/exploitation ratio
+    episodes = 750000
+    ramp     = 25000
 
     # Init ML model
-    model = MLPRegressor(hidden_layer_sizes=(50), max_iter=1000)
+    model = MLPRegressor(hidden_layer_sizes=(50))
     xstate = np.zeros(9)
     ystate = np.zeros(9)
     model.fit([xstate], [ystate])
@@ -50,30 +47,28 @@ if sys.argv[1] == 'train':
     # Play n episodes
     for n in range(episodes):
         b = board.Board()
-        total_reward = 0
+        first = True
         while not b.is_done():
             for player in ['x', 'o']:
-
-                # Limit experience replay memory length
-                #replay_memory = replay_memory[-7500:]
 
                 # Get current game state
                 state = b.get_board_vector(player)
 
                 # Select action with epsilon-greedy strategy
-                if random.uniform(0, 1) < epsilon:
+                if random.uniform(0, 1) < 1+(-epsilon*n/ramp) or first:
                     # Explore: make random valid move
                     action = random.choice(b.valid_moves())
+                    first = False
                 else:
                     # Exploit: make best move.
                     action = np.argmax(model.predict([state]))
 
                 b.place(action, player)
                 reward = b.reward(player)
+                # Correct reward for losing player.
                 if b.is_win():
-                    replay_memory[-1][2] = -1
+                    replay_memory[-1][2] = -5.0
                     replay_memory[-1][4] = True
-                total_reward += reward
                 new_state = b.get_board_vector(player)
 
                 # Store experience e(s, a, r, s') in replay memory.
@@ -83,27 +78,30 @@ if sys.argv[1] == 'train':
                     break
 
         # Update model every so often.
-        if not n % 25:
+        if not n % 100:
+            score = (0.5*t_avg[1] +  t_avg[2])/100
+            scores.append((n, score))
             model = experience_replay(replay_memory)
-            with open('out', 'a') as f:
-                print("Episode #{0}".format(n))
-                print("------------")
-                if b.broken_rules:
-                    print("Broken Rules")
-                    f.write("{0} 0\n".format(n))
-                elif b.is_win():
-                    print("Win/Lose")
-                    f.write("{0} 1\n".format(n))
-                elif b.is_done():
-                    print("Tie")
-                    f.write("{0} 2\n".format(n))
-                print()
+            with open(sys.argv[2]+ 'out', 'w') as f: 
+                sys.stdout.write("Episode {0}, Broken Rules: {1}, Win/Loss: {2}, Tie: {3},  Average Score: {4:.2f}\r".format(n, t_avg[0], t_avg[1], t_avg[2], score))
+                sys.stdout.flush()
+                for s in scores:
+                    f.write("{0} {1}\n".format(s[0], s[1]))
+                t_avg = [0, 0, 0]
+        else:
+            if b.broken_rules:
+                t_avg[0] += 1
+            elif b.is_win():
+                t_avg[1] += 1
+            elif b.is_done():
+                t_avg[2] += 1
+        if not n % 100:
+            with open(sys.argv[2], 'wb') as f:
+                pickle.dump(model, f)
 
 
-    with open('model', 'wb') as f:
-        pickle.dump(model, f)
 elif sys.argv[1] == 'play':
-    with open('model', 'rb') as f:
+    with open(sys.argv[2], 'rb') as f:
         model = pickle.load(f)
     b = board.Board()
     b.print_board()
@@ -123,8 +121,8 @@ elif sys.argv[1] == 'play':
                 b.place(action, player)
                 reward = b.reward(player)
                 new_state = b.get_board_vector(player)
-
-            b.print_board()
+            if player == 'o':
+                b.print_board()
             if b.is_done():
                 break
 
